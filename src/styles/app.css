@@ -646,3 +646,19 @@ input[type="number"]:focus {
 .skip-link:focus {
     left: var(--space-4);
 }
+
+/* Format controls sit beside the manual download actions. */
+.download-format {
+    width: auto;
+    font: inherit;
+    font-size: var(--text-sm);
+    color: var(--ink);
+    background: var(--bg);
+    border: 1px solid var(--border-strong);
+    border-radius: var(--radius-sm);
+    padding: 0.45rem 0.65rem;
+}
+.download-format:focus-visible {
+    outline: 2px solid var(--accent);
+    outline-offset: 2px;
+}

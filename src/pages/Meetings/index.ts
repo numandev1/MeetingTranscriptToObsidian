@@ -376,7 +376,8 @@ function openTranscriptDialog(meeting: Meeting, index: number, focus: "transcrip
         downloadButton.onclick = () => {
             const message: ExtensionMessage = {
                 type: wantsSummary ? "download_summary_at_index" : "download_transcript_at_index",
-                index: index
+                index: index,
+                format: document.querySelector<HTMLSelectElement>("#transcript-dialog-format")?.value === "html" ? "html" : "txt"
             }
             chrome.runtime.sendMessage(message, (responseUntyped) => {
                 const response = responseUntyped as ExtensionResponse
@@ -1072,7 +1073,8 @@ function loadMeetings(): void {
                                     : `View summary`
                             }" aria-label="View this meeting summary">
                                 View${meeting.summaryStatus === "failed" ? ` <span class="status status-failed">stale</span>` : ``}
-                            </button>` : ``}
+                            </button>
+                            <button class="download-summary-html-button" data-index="${i}" title="Download summary as HTML" aria-label="Download this meeting summary as HTML">Download summary HTML</button>` : ``}
                             <button class="summarize-button${meeting.summary ? ` is-redo` : ``}" data-index="${i}" title="${meeting.summary ? `Summarise again with ChatGPT` : `Summarise with ChatGPT`}" aria-label="${meeting.summary ? `Summarise this meeting again with ChatGPT` : `Summarise this meeting with ChatGPT`}">
                                 ${meeting.summary ? `Redo` : `Summarise`}
                             </button>
@@ -1153,6 +1155,26 @@ function loadMeetings(): void {
                     if (viewSummaryButton instanceof HTMLButtonElement) {
                         viewSummaryButton.addEventListener("click", function () {
                             openTranscriptDialog(meeting, i, "summary")
+                        })
+                    }
+
+                    const downloadSummaryHtmlButton = row.querySelector<HTMLButtonElement>(".download-summary-html-button")
+                    if (downloadSummaryHtmlButton) {
+                        downloadSummaryHtmlButton.addEventListener("click", function () {
+                            downloadSummaryHtmlButton.disabled = true
+                            const message: ExtensionMessage = {
+                                type: "download_summary_at_index",
+                                index: i,
+                                format: "html"
+                            }
+                            chrome.runtime.sendMessage(message, (responseUntyped) => {
+                                downloadSummaryHtmlButton.disabled = false
+                                const response = responseUntyped as ExtensionResponse | undefined
+                                if (chrome.runtime.lastError || !response?.success) {
+                                    const error = response?.message as ErrorObject | undefined
+                                    alert(error?.errorMessage || chrome.runtime.lastError?.message || "Could not download summary as HTML")
+                                }
+                            })
                         })
                     }
 

@@ -164,6 +164,8 @@ export interface ExtensionMessage {
   type: ExtensionMessageType
   /** Index of the meeting to process. */
   index?: number
+  /** File format for manual downloads. Defaults to plain text. */
+  format?: "txt" | "html"
   platform?: Platform | Platform[]
   stateTranscriptBlock?: StateTranscriptBlock
   /** Messages read from Meet's embedded Google Chat iframe, relayed to the meeting frame. */

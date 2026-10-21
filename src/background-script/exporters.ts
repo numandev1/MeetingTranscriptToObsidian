@@ -1,6 +1,7 @@
 import type { ErrorObject, Meeting, ResultLocal, ResultSync, WebhookBody } from "@lib/types"
 import { getTranscriptString, getChatMessagesString } from "./utils"
 import { getFolderPrefix, DEFAULT_DOWNLOAD_SUBFOLDER } from "@lib/paths"
+import { buildMeetingHtml } from "@lib/html-export"
 import { TIMEFORMAT } from "./config"
 
 /**
@@ -52,7 +53,7 @@ export function registerDownloadFilenameGuard(): void {
  *
  * @throws error codes: 009, 010
  */
-export function downloadTranscript(index: number | Meeting, isWebhookEnabled?: boolean): Promise<string> {
+export function downloadTranscript(index: number | Meeting, isWebhookEnabled?: boolean, format: "txt" | "html" = "txt"): Promise<string> {
     return new Promise((resolve, reject) => {
         chrome.storage.local.get(["meetings"], function (resultLocalUntyped) {
             const resultLocal = resultLocalUntyped as Partial<ResultLocal>
@@ -84,7 +85,7 @@ export function downloadTranscript(index: number | Meeting, isWebhookEnabled?: b
                     const kind = isLive ? "transcript so far" : "transcript"
                     const prefix = meeting.meetingSoftware ? `${meeting.meetingSoftware} ${kind}` : (isLive ? "Transcript so far" : "Transcript")
 
-                    const fileName = `${folderPrefix}${prefix}-${sanitisedMeetingTitle} at ${formattedTimestamp} on.txt`
+                    const fileName = `${folderPrefix}${prefix}-${sanitisedMeetingTitle} at ${formattedTimestamp} on.${format}`
 
 
                     // Format transcript and chatMessages content
@@ -92,12 +93,13 @@ export function downloadTranscript(index: number | Meeting, isWebhookEnabled?: b
                     content += `\n\n---------------\nCHAT MESSAGES\n---------------\n\n`
                     content += getChatMessagesString(meeting.chatMessages)
 
-                    const blob = new Blob([content], { type: "text/plain" })
+                    const blob = new Blob([format === "html" ? buildMeetingHtml(meeting, "transcript", isLive) : content], { type: format === "html" ? "text/html;charset=utf-8" : "text/plain" })
 
                     // Read the blob as a data URL
                     const reader = new FileReader()
 
                     // Read the blob
+                    reader.onerror = () => reject({ errorCode: "009", errorMessage: "Failed to read blob" } satisfies ErrorObject)
                     reader.readAsDataURL(blob)
 
                     // Download as text file, once blob is read
@@ -111,9 +113,10 @@ export function downloadTranscript(index: number | Meeting, isWebhookEnabled?: b
                                 resolve("Transcript downloaded successfully")
                             }).catch((err) => {
                                 console.error(err)
-                                startDownload(`${folderPrefix}Transcript.txt`, dataUrl)
-                                console.log("Invalid file name. Transcript downloaded to the configured directory with simple file name.")
-                                resolve("Transcript downloaded successfully with default file name")
+                                startDownload(`${folderPrefix}Transcript.${format}`, dataUrl).then(() => {
+                                    console.log("Invalid file name. Transcript downloaded to the configured directory with simple file name.")
+                                    resolve("Transcript downloaded successfully with default file name")
+                                }).catch(reject)
 
                             })
                         }
@@ -231,7 +234,7 @@ export function postTranscriptToWebhook(index: number): Promise<string> {
  *
  * @throws error codes: 009, 010, 022
  */
-export function downloadSummary(index: number | Meeting): Promise<string> {
+export function downloadSummary(index: number | Meeting, format: "txt" | "html" = "txt"): Promise<string> {
     return new Promise((resolve, reject) => {
         chrome.storage.local.get(["meetings"], function (resultLocalUntyped) {
             const resultLocal = resultLocalUntyped as Partial<ResultLocal>
@@ -267,14 +270,15 @@ export function downloadSummary(index: number | Meeting): Promise<string> {
 
                 const kind = isLive ? "summary so far" : "summary"
                 const prefix = meeting.meetingSoftware ? `${meeting.meetingSoftware} ${kind}` : (isLive ? "Summary so far" : "Summary")
-                const fileName = `${folderPrefix}${prefix}-${sanitisedMeetingTitle} at ${formattedTimestamp}.txt`
+                const fileName = `${folderPrefix}${prefix}-${sanitisedMeetingTitle} at ${formattedTimestamp}.${format}`
 
                 let content = `${meeting.meetingTitle || meeting.title || "Meeting"}\n`
                 content += `${new Date(meeting.meetingStartTimestamp).toLocaleString("default", TIMEFORMAT).toUpperCase()}\n\n`
                 content += `${meeting.summary.trim()}\n`
 
                 const reader = new FileReader()
-                reader.readAsDataURL(new Blob([content], { type: "text/plain" }))
+                reader.onerror = () => reject({ errorCode: "009", errorMessage: "Failed to read blob" } satisfies ErrorObject)
+                reader.readAsDataURL(new Blob([format === "html" ? buildMeetingHtml(meeting, "summary", isLive) : content], { type: format === "html" ? "text/html;charset=utf-8" : "text/plain" }))
                 reader.onload = function (event) {
                     if (!event.target?.result) {
                         reject({ errorCode: "009", errorMessage: "Failed to read blob" } satisfies ErrorObject)
@@ -288,8 +292,9 @@ export function downloadSummary(index: number | Meeting): Promise<string> {
                     }).catch((err) => {
                         console.error(err)
                         // Fall back to a plain name, exactly as the transcript download does
-                        startDownload(`${folderPrefix}Summary.txt`, dataUrl)
-                        resolve("Summary downloaded successfully with default file name")
+                        startDownload(`${folderPrefix}Summary.${format}`, dataUrl)
+                            .then(() => resolve("Summary downloaded successfully with default file name"))
+                            .catch(reject)
                     })
                 }
             })

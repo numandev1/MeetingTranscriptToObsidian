@@ -99,7 +99,7 @@ chrome.runtime.onMessage.addListener(function (messageUnTyped, sender, sendRespo
     if (message.type === "download_transcript_at_index") {
         if ((typeof message.index === "number") && (message.index >= 0)) {
             // Download the requested item
-            downloadTranscript(message.index, false)
+            downloadTranscript(message.index, false, message.format)
                 .then(() => {
                     const response: ExtensionResponse = { success: true }
                     sendResponse(response)
@@ -143,7 +143,7 @@ chrome.runtime.onMessage.addListener(function (messageUnTyped, sender, sendRespo
 
     if (message.type === "download_summary_at_index") {
         if ((typeof message.index === "number") && (message.index >= 0)) {
-            downloadSummary(message.index)
+            downloadSummary(message.index, message.format)
                 .then(() => sendResponse({ success: true } satisfies ExtensionResponse))
                 .catch((error) => {
                     // Fails with error codes: 009, 010, 022
@@ -365,7 +365,7 @@ chrome.runtime.onMessage.addListener(function (messageUnTyped, sender, sendRespo
 
     if (message.type === "download_live_transcript") {
         readLiveMeeting()
-            .then(meeting => downloadTranscript(meeting))
+            .then(meeting => downloadTranscript(meeting, false, message.format))
             .then(() => sendResponse({ success: true } satisfies ExtensionResponse))
             .catch((error) => {
                 // Fails with error codes: 009, 022, 023
@@ -391,7 +391,7 @@ chrome.runtime.onMessage.addListener(function (messageUnTyped, sender, sendRespo
                 chatMessages: [],
                 webhookPostStatus: "new",
                 summary: live.summary,
-            })
+            }, message.format)
                 .then(() => sendResponse({ success: true } satisfies ExtensionResponse))
                 .catch(error => sendResponse({ success: false, message: error as ErrorObject } satisfies ExtensionResponse))
         })

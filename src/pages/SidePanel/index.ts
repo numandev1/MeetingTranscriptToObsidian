@@ -282,7 +282,10 @@ summarizeButton?.addEventListener("click", () => {
 
 downloadButton?.addEventListener("click", () => {
     downloadButton.disabled = true
-    const message: ExtensionMessage = { type: "download_live_transcript" }
+    const message: ExtensionMessage = {
+        type: "download_live_transcript",
+        format: document.querySelector<HTMLSelectElement>("#live-download-format")?.value === "html" ? "html" : "txt"
+    }
     chrome.runtime.sendMessage(message, (responseUntyped) => {
         const response = responseUntyped as ExtensionResponse | undefined
         downloadButton.disabled = false
@@ -292,7 +295,10 @@ downloadButton?.addEventListener("click", () => {
 
 downloadSummaryButton?.addEventListener("click", () => {
     downloadSummaryButton.disabled = true
-    const message: ExtensionMessage = { type: "download_live_summary" }
+    const message: ExtensionMessage = {
+        type: "download_live_summary",
+        format: document.querySelector<HTMLSelectElement>("#live-summary-download-format")?.value === "html" ? "html" : "txt"
+    }
     chrome.runtime.sendMessage(message, (responseUntyped) => {
         const response = responseUntyped as ExtensionResponse | undefined
         downloadSummaryButton.disabled = false

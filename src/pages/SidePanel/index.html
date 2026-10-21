@@ -196,6 +196,10 @@
         <!-- Only while a meeting is live: nothing here ends or files the meeting -->
         <div class="panel-actions" id="panel-actions" hidden>
             <button id="summarize-live" class="btn btn-primary btn-sm">Summarise so far</button>
+            <select class="download-format" id="live-download-format" aria-label="Transcript download format">
+                <option value="txt">Text (.txt)</option>
+                <option value="html">HTML (.html)</option>
+            </select>
             <button id="download-live" class="btn btn-secondary btn-sm">Download transcript</button>
         </div>
         <p class="action-status" id="action-status" role="status" aria-live="polite"></p>
@@ -205,6 +209,10 @@
         <summary>Summary <span id="live-summary-meta"></span></summary>
         <div class="live-summary-body" id="live-summary-body"></div>
         <div class="live-summary-actions">
+            <select class="download-format" id="live-summary-download-format" aria-label="Summary download format">
+                <option value="txt">Text (.txt)</option>
+                <option value="html">HTML (.html)</option>
+            </select>
             <button id="download-live-summary" class="btn btn-secondary btn-sm">Download summary</button>
             <button id="copy-live-summary" class="btn btn-secondary btn-sm">Copy</button>
         </div>
