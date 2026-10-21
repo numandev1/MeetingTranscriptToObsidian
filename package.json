@@ -1,7 +1,7 @@
 {
   "name": "meetingtranscripttoobsidian",
   "private": true,
-  "version": "0.0.3",
+  "version": "0.0.4",
   "description": "Meeting transcripts from Google Meet, Teams and Zoom, saved to your Obsidian vault. Private and open source.",
   "author": "muhammadnuman70@gmail.com",
   "scripts": {

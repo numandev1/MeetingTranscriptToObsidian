@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "MeetingTranscriptToObsidian",
-  "version": "0.0.3",
+  "version": "0.0.4",
   "minimum_chrome_version": "114",
   "description": "Meeting transcripts from Google Meet, Teams and Zoom, saved to your Obsidian vault. Private and open source.",
   "author": {

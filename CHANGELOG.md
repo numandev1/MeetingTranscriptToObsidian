@@ -1,5 +1,10 @@
 # Changelog
 
+## 0.0.4
+
+- Download summaries and transcripts as self-contained HTML files from saved meetings and the live side panel.
+- Download summary HTML directly from the meetings list.
+
 ## 0.0.3
 
 - ci: bump the patch version automatically on every release
