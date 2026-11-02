@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.0.5
+
+- fix: isolate concurrent meetings and add Markdown downloads
+
 ## 0.0.4
 
 - Download summaries and transcripts as self-contained HTML files from saved meetings and the live side panel.
