@@ -40,7 +40,7 @@ export function initGoogleMeet(): void {
         overWriteChromeStorage(state, ["meetingSoftware", "meetingStartTimestamp", "meetingTitle", "transcript", "chatMessages"], false)
         listenForEmbeddedChatMessages(state)
         // Drop any buffer left over from a meeting that was never picked up
-        clearLiveBuffer()
+        clearLiveBuffer(state)
 
         checkExtensionStatus(state).finally(() => {
             console.log("Extension status " + state.extensionStatusJSON.status)
@@ -67,7 +67,8 @@ function googleMeetRoutines(state: ContentScriptState): void {
     waitForElement(SELECTORS_GOOGLE_MEET.GOOGLE_SYMBOLS, SELECTORS_GOOGLE_MEET.TEXT_CALL_END).then(() => {
         console.log("Meeting started")
         const message: ExtensionMessage = {
-            type: "new_meeting_started"
+            type: "new_meeting_started",
+            captureId: state.captureId
         }
         chrome.runtime.sendMessage(message, function () { })
         state.hasMeetingStarted = true

@@ -99,7 +99,7 @@ export function openSidePanel(): Promise<string> {
  * and Google rotates those; an address is only accepted when exactly one distinct
  * candidate is present, so a participant's address can never be mistaken for the user's.
  */
-export function captureAccountEmail(tabId: number): void {
+export function captureAccountEmail(tabId: number, save: (email: string) => void): void {
     chrome.scripting.executeScript({
         target: { tabId },
         world: "MAIN",
@@ -120,9 +120,7 @@ export function captureAccountEmail(tabId: number): void {
     }).then((results) => {
         const accountEmail = results?.[0]?.result
         if (accountEmail) {
-            chrome.storage.local.set({ accountEmail: accountEmail }, function () {
-                console.log("Meeting account captured")
-            })
+            save(accountEmail)
         }
     }).catch((error) => {
         // Not fatal: notes simply stay in the top level folder

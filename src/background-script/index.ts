@@ -1,3 +1,4 @@
+import { createCaptureStore } from "./capture-sessions"
 import type { ErrorObject, ExtensionMessage, ExtensionResponse, Platform, ResultLocal, ResultSync } from "@lib/types"
 import { processLastMeeting, readLiveMeeting, recoverLastMeeting, repairInvalidMerges } from "./meetings"
 import { normaliseMeetingUrl } from "@lib/meeting-merge"
@@ -15,7 +16,6 @@ import {
     deregisterZoomRedirect,
 } from "./platforms"
 import {
-    clearTabIdAndApplyUpdate,
     openExtensionPopup,
     openSidePanel,
     captureAccountEmail
@@ -25,6 +25,34 @@ import { DEFAULT_OBSIDIAN_BASE_URL } from "./obsidian"
 
 // Registered at the top level so it is in place on every service worker wake
 registerDownloadFilenameGuard()
+
+const captureStore = createCaptureStore(
+    () => chrome.storage.local.get(["captureSessions", "meetingTabId"]),
+    patch => chrome.storage.local.set(patch),
+)
+
+let processingCaptures = 0
+async function finishCapture(tabId: number, captureId?: string, recover = false): Promise<void> {
+    processingCaptures++
+    try {
+        const snapshot = await captureStore.finish(tabId, captureId)
+            ?? (recover ? await captureStore.pending(tabId) : undefined)
+        if (snapshot) {
+            try {
+                await processLastMeeting(snapshot)
+                await captureStore.complete(tabId, snapshot.captureId)
+            } catch (error) {
+                // An empty lobby has nothing to recover; export failures retain the snapshot.
+                if ((error as ErrorObject).errorCode === "014") await captureStore.complete(tabId, snapshot.captureId)
+                throw error
+            }
+        }
+    } finally {
+        processingCaptures--
+        const stored = await chrome.storage.local.get(["meetingTabId", "isDeferredUpdatedAvailable"])
+        if (!processingCaptures && !stored.meetingTabId && stored.isDeferredUpdatedAvailable) chrome.runtime.reload()
+    }
+}
 
 chrome.runtime.onMessage.addListener(function (messageUnTyped, sender, sendResponse) {
     const message = messageUnTyped as ExtensionMessage
@@ -45,55 +73,28 @@ chrome.runtime.onMessage.addListener(function (messageUnTyped, sender, sendRespo
         return true
     }
 
-    if (message.type === "new_meeting_started") {
-        // Saving the sending tab's id, to download transcript when this tab is closed.
-        // It must come from the sender rather than a query for the active tab: the
-        // meeting tab is frequently not the focused one when the meeting starts (user
-        // switches tabs while waiting to be let in, or the call is in another window),
-        // and recording the wrong tab means the close is never intercepted.
-        const meetingTabId = sender.tab?.id
-        if (typeof meetingTabId === "number") {
-            // Clear the previous meeting's account before reading this one, so a failed
-            // read cannot file this meeting under the wrong account.
-            chrome.storage.local.set({
-                meetingTabId: meetingTabId,
-                accountEmail: undefined,
-                // Recorded so a rejoin of the same meeting can be merged into it
-                meetingUrl: normaliseMeetingUrl(sender.tab?.url)
-            }, function () {
-                console.log("Meeting tab id saved")
+    if (message.type === "capture_update" || message.type === "meeting_ended" || message.type === "new_meeting_started") {
+        const tabId = sender.tab?.id ?? (message.type === "capture_update" ? message.captureTabId : undefined)
+        if (typeof tabId !== "number" || !message.captureId) {
+            sendResponse({ success: false, message: "Missing meeting identity" } satisfies ExtensionResponse)
+            return false
+        }
+        const captureId = message.captureId
+        const patch = message.type === "new_meeting_started"
+            ? { meetingUrl: normaliseMeetingUrl(sender.tab?.url) }
+            : message.capturePatch ?? {}
+        captureStore.update(tabId, captureId, patch, !!message.capturePatch?.meetingSoftware)
+            .then(async () => {
+                if (message.type === "new_meeting_started") {
+                    captureAccountEmail(tabId, accountEmail => {
+                        void captureStore.update(tabId, captureId, { accountEmail }, false)
+                    })
+                }
+                if (message.type === "meeting_ended") await finishCapture(tabId, captureId)
+                sendResponse({ success: true } satisfies ExtensionResponse)
             })
-            captureAccountEmail(meetingTabId)
-        }
-        else {
-            console.error("new_meeting_started received without a sender tab; cannot track meeting tab")
-        }
-    }
-
-    if (message.type === "meeting_ended") {
-        // Prevents double downloading of transcript from tab closed event listener. Also prevents available update from being applied, during meeting post processing.
-        chrome.storage.local.set({ meetingTabId: "processing" }, function () {
-            console.log("Meeting tab id set to processing meeting")
-
-            processLastMeeting()
-                .then(() => {
-                    const response: ExtensionResponse = { success: true }
-                    sendResponse(response)
-                })
-                .catch((error) => {
-                    // Fails with error codes: 009, 010, 011, 012, 013, 014
-                    const parsedError = error as ErrorObject
-
-                    const response: ExtensionResponse = { success: false, message: parsedError }
-                    sendResponse(response)
-                })
-                .finally(() => {
-                    // setTimeout(() => {
-                    //     checkPermissionsAndOpenMeetingsPage()
-                    // }, 10000)
-                    clearTabIdAndApplyUpdate()
-                })
-        })
+            .catch(error => sendResponse({ success: false, message: error } satisfies ExtensionResponse))
+        return true
     }
 
     if (message.type === "download_transcript_at_index") {
@@ -230,17 +231,13 @@ chrome.runtime.onMessage.addListener(function (messageUnTyped, sender, sendRespo
     }
 
     if (message.type === "recover_last_meeting") {
-        recoverLastMeeting().then((resolvedMessage) => {
-            const response: ExtensionResponse = { success: true, message: resolvedMessage }
-            sendResponse(response)
-        })
-            .catch((error) => {
-                // Fails with error codes: 009, 010, 011, 012, 013, 014
-                const parsedError = error as ErrorObject
-
-                const response: ExtensionResponse = { success: false, message: parsedError }
-                sendResponse(response)
-            })
+        // A newly opened tab must never recover (and file) another tab's live call.
+        const tabId = sender.tab?.id
+        const recover = typeof tabId === "number"
+            ? finishCapture(tabId, undefined, true)
+            : recoverLastMeeting()
+        recover.then(() => sendResponse({ success: true } satisfies ExtensionResponse))
+            .catch(error => sendResponse({ success: false, message: error } satisfies ExtensionResponse))
     }
 
     if (message.type === "get_platform_enablement_status") {
@@ -374,10 +371,10 @@ chrome.runtime.onMessage.addListener(function (messageUnTyped, sender, sendRespo
     }
 
     if (message.type === "download_live_summary") {
-        chrome.storage.local.get(["liveSummary", "meetingTitle", "meetingSoftware"], (resultUntyped) => {
+        chrome.storage.local.get(["liveSummary", "meetingTitle", "meetingSoftware", "meetingStartTimestamp"], (resultUntyped) => {
             const result = resultUntyped as Partial<ResultLocal>
             const live = result.liveSummary
-            if (!live) {
+            if (!live || live.meetingStartTimestamp !== result.meetingStartTimestamp) {
                 sendResponse({ success: false, message: { errorCode: "022", errorMessage: "Nothing to summarise for this meeting" } } satisfies ExtensionResponse)
                 return
             }
@@ -398,7 +395,10 @@ chrome.runtime.onMessage.addListener(function (messageUnTyped, sender, sendRespo
     }
 
     if (message.type === "open_side_panel") {
-        openSidePanel().then((resolvedMessage) => {
+        const select = typeof sender.tab?.id === "number" ? captureStore.select(sender.tab.id) : Promise.resolve()
+        // Open synchronously to preserve Chrome's user-gesture requirement.
+        const opened = openSidePanel()
+        Promise.all([select, opened]).then(([, resolvedMessage]) => {
             const response: ExtensionResponse = { success: true, message: resolvedMessage }
             sendResponse(response)
         }).catch((error) => {
@@ -415,25 +415,7 @@ chrome.runtime.onMessage.addListener(function (messageUnTyped, sender, sendRespo
 
 // Download last meeting if meeting tab is closed
 chrome.tabs.onRemoved.addListener(function (tabId) {
-    chrome.storage.local.get(["meetingTabId"], function (resultLocalUntyped) {
-        const resultLocal = resultLocalUntyped as Partial<ResultLocal>
-
-        if (tabId === resultLocal.meetingTabId) {
-            console.log("Successfully intercepted tab close")
-
-            // Prevent misfires of onRemoved until next meeting. Also prevents available update from being applied, during meeting post processing.
-            chrome.storage.local.set({ meetingTabId: "processing" }, function () {
-                console.log("Meeting tab id set to processing meeting")
-
-                processLastMeeting().finally(() => {
-                    // setTimeout(() => {
-                    //     checkPermissionsAndOpenMeetingsPage()
-                    // }, 10000)
-                    clearTabIdAndApplyUpdate()
-                })
-            })
-        }
-    })
+    void finishCapture(tabId).catch(error => console.error("Meeting finalization failed", error))
 })
 
 // Listen for extension updates
@@ -442,7 +424,7 @@ chrome.runtime.onUpdateAvailable.addListener(() => {
     chrome.storage.local.get(["meetingTabId"], function (resultUntyped) {
         const result = resultUntyped as Partial<ResultLocal>
 
-        if (result.meetingTabId) {
+        if (result.meetingTabId || processingCaptures > 0) {
             // There is an active meeting(values: tabId or processing), defer the update
             chrome.storage.local.set({ isDeferredUpdatedAvailable: true }, function () {
                 console.log("Deferred update flag set")

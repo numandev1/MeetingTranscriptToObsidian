@@ -11,9 +11,17 @@ import { summarizeAndFileMeeting } from "./summarizer"
  * Fails if transcript is empty or webhook request fails or if no meetings in storage.
  * @throws error codes: 009, 010, 011, 012, 013, 014
  */
-export function processLastMeeting(): Promise<string> {
+let processingQueue: Promise<unknown> = Promise.resolve()
+
+export function processLastMeeting(snapshot?: Partial<ResultLocal> & { captureId?: string; meetingEndTimestamp?: string }): Promise<string> {
+    const run = processingQueue.then(() => processMeeting(snapshot))
+    processingQueue = run.catch(() => {})
+    return run
+}
+
+function processMeeting(snapshot?: Partial<ResultLocal> & { captureId?: string; meetingEndTimestamp?: string }): Promise<string> {
     return new Promise((resolve, reject) => {
-        pickupLastMeetingFromStorage()
+        pickupLastMeetingFromStorage(snapshot)
             .then(() => {
                 chrome.storage.local.get(["meetings"], function (resultLocalUntyped) {
                     const resultLocal = resultLocalUntyped as Partial<ResultLocal>
@@ -27,7 +35,16 @@ export function processLastMeeting(): Promise<string> {
                         const promises: Promise<unknown>[] = []
 
                         // Meeting index to download and post webhook
-                        const lastIndex = meetings.length - 1
+                        const lastIndex = snapshot
+                            ? meetings.findIndex(meeting => (snapshot.captureId && meeting.captureId === snapshot.captureId)
+                                || (coversStartTimestamp(meeting, snapshot.meetingStartTimestamp ?? "")
+                                    && meeting.meetingUrl === snapshot.meetingUrl
+                                    && meeting.meetingSoftware === snapshot.meetingSoftware))
+                            : meetings.length - 1
+                        if (lastIndex < 0) {
+                            reject({ errorCode: "010", errorMessage: "Meeting at specified index not found" } satisfies ErrorObject)
+                            return
+                        }
 
                         // Promise to download transcript
                         if (resultSync.autoDownloadFileAfterMeeting) {
@@ -157,6 +174,7 @@ export function readLiveMeeting(): Promise<Meeting> {
     return new Promise((resolve, reject) => {
         chrome.storage.local.get([
             "meetingTabId",
+            "activeCaptureId",
             "meetingSoftware",
             "meetingTitle",
             "meetingStartTimestamp",
@@ -181,6 +199,7 @@ export function readLiveMeeting(): Promise<Meeting> {
             }
 
             resolve({
+                captureId: result.activeCaptureId,
                 meetingSoftware: result.meetingSoftware ? result.meetingSoftware : "",
                 accountEmail: result.accountEmail,
                 meetingTitle: result.meetingTitle,
@@ -200,7 +219,7 @@ export function readLiveMeeting(): Promise<Meeting> {
  * format them into strings, and save as a new entry in meetings (keeping last 10).
  * @throws error codes: 013, 014
  */
-export function pickupLastMeetingFromStorage(): Promise<string> {
+export function pickupLastMeetingFromStorage(snapshot?: Partial<ResultLocal> & { captureId?: string; meetingEndTimestamp?: string }): Promise<string> {
     return new Promise((resolve, reject) => {
         chrome.storage.local.get([
             "meetingSoftware",
@@ -213,7 +232,7 @@ export function pickupLastMeetingFromStorage(): Promise<string> {
             "captionsSeen",
             "meetingUrl",
         ], function (resultUntyped) {
-            const result = resultUntyped as Partial<ResultLocal>
+            const result = snapshot ?? resultUntyped as Partial<ResultLocal>
 
             if (result.meetingStartTimestamp) {
                 const transcript = mergeLiveTranscriptBlock(result.transcript ?? [], result.liveTranscriptBlock)
@@ -222,12 +241,13 @@ export function pickupLastMeetingFromStorage(): Promise<string> {
                 if ((transcript.length > 0) || (chatMessages.length > 0)) {
                     // Create new transcript entry
                     const newMeetingEntry: Meeting = {
+                        captureId: snapshot?.captureId,
                         meetingSoftware: result.meetingSoftware ? result.meetingSoftware : "",
                         accountEmail: result.accountEmail,
                         captionsSeen: result.captionsSeen === true,
                         meetingTitle: result.meetingTitle,
                         meetingStartTimestamp: result.meetingStartTimestamp,
-                        meetingEndTimestamp: new Date().toISOString(),
+                        meetingEndTimestamp: snapshot?.meetingEndTimestamp ?? new Date().toISOString(),
                         transcript: transcript,
                         chatMessages: chatMessages,
                         webhookPostStatus: "new",
@@ -252,7 +272,7 @@ export function pickupLastMeetingFromStorage(): Promise<string> {
 
                         // Save updated recent transcripts, and drop the in-flight buffer
                         // now that it is part of a saved meeting
-                        chrome.storage.local.set({ meetings: meetings, liveTranscriptBlock: null }, function () {
+                        chrome.storage.local.set({ meetings: meetings, ...(snapshot ? {} : { liveTranscriptBlock: null }) }, function () {
                             console.log("Last meeting picked up")
                             resolve("Last meeting picked up")
                         })

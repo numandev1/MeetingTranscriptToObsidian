@@ -83,6 +83,8 @@ export function isRejoinOf(previous: Meeting | undefined, next: Meeting): boolea
 
     const previousEnd = new Date(previous.meetingEndTimestamp)
     const nextStart = new Date(next.meetingStartTimestamp)
+    if (previous.captureId && next.captureId && previous.captureId !== next.captureId
+        && nextStart.getTime() < previousEnd.getTime()) return false
     const gap = nextStart.getTime() - previousEnd.getTime()
     if (!Number.isFinite(gap) || gap < -REJOIN_CLOCK_SLACK_MS) {
         return false
@@ -155,7 +157,11 @@ export function mergeRejoin(previous: Meeting, next: Meeting): Meeting {
 
 /** Keep the continued meeting last so exports and retention use the updated entry. */
 export function appendOrMergeMeeting(meetings: Meeting[], next: Meeting): Meeting[] {
-    if (meetings.some(meeting => coversStartTimestamp(meeting, next.meetingStartTimestamp))) {
+    if (meetings.some(meeting => next.captureId && meeting.captureId
+        ? meeting.captureId === next.captureId
+        : coversStartTimestamp(meeting, next.meetingStartTimestamp)
+            && normaliseMeetingUrl(meeting.meetingUrl) === normaliseMeetingUrl(next.meetingUrl)
+            && meeting.meetingSoftware === next.meetingSoftware)) {
         return meetings
     }
     for (let index = meetings.length - 1; index >= 0; index--) {

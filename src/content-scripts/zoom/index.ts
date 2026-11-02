@@ -62,7 +62,7 @@ function initZoom(): void {
             // Push fresh state to chrome storage
             overWriteChromeStorage(state, ["meetingSoftware", "meetingStartTimestamp", "meetingTitle", "transcript", "chatMessages"], false)
             // Drop any buffer left over from a meeting that was never picked up
-            clearLiveBuffer()
+            clearLiveBuffer(state)
 
             checkExtensionStatus(state).finally(() => {
                 console.log("Extension status " + state.extensionStatusJSON.status)
@@ -97,7 +97,8 @@ function zoomMeetingRoutines(state: ContentScriptState): void {
                     waitForElement(SELECTORS_ZOOM.AUDIO_OPTION_MENU, undefined, iframe).then(() => {
                         console.log("Meeting started")
                         const message: ExtensionMessage = {
-                            type: "new_meeting_started"
+                            type: "new_meeting_started",
+            captureId: state.captureId
                         }
                         chrome.runtime.sendMessage(message, function () { })
                         state.hasMeetingStarted = true

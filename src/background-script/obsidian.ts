@@ -44,7 +44,7 @@ export function getObsidianNoteName(meeting: Meeting): string {
         .trim()
 
     const startedAt = meeting.meetingStartTimestamp
-    return `${getLocalDateStamp(startedAt)} ${getLocalTimeStamp(startedAt)} ${title || "Meeting"}`
+    return `${getLocalDateStamp(startedAt)} ${getLocalTimeStamp(startedAt)} ${title || "Meeting"}${meeting.captureId ? ` ${meeting.captureId}` : ""}`
 }
 
 /** Escapes a value for a single-quoted YAML scalar. */

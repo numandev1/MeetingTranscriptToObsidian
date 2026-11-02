@@ -36,6 +36,7 @@ export type TranscriptMutationCallback = (state: ContentScriptState, mutations: 
 /** State Factory: Returns a pristine, isolated meeting state block. */
 export function createContentScriptState(meetingSoftware: MeetingSoftware, platform: Platform): ContentScriptState {
     return {
+        captureId: crypto.randomUUID(),
         meetingSoftware: meetingSoftware,
         platform: platform,
         userName: "You",
@@ -113,20 +114,16 @@ export function overWriteChromeStorage(state: ContentScriptState, keys: Storable
     if (keys.includes("transcript")) objectToSave.transcript = state.transcript
     if (keys.includes("chatMessages")) objectToSave.chatMessages = state.chatMessages
 
-    chrome.storage.local.set(objectToSave, function () {
-        if (sendDownloadMessage) {
-            const message: ExtensionMessage = { type: "meeting_ended" }
-            chrome.runtime.sendMessage(message, (responseUntyped) => {
-                const response = responseUntyped as ExtensionResponse
-                if ((!response.success)) {
-                    const parsedError = response.message as ErrorObject
-                    if (parsedError.errorCode === "010") {
-                        console.error(parsedError.errorMessage)
-                    }
-                }
-            })
-        }
-    })
+    chrome.runtime.sendMessage({
+        type: sendDownloadMessage ? "meeting_ended" : "capture_update",
+        captureId: state.captureId,
+        capturePatch: objectToSave,
+    } satisfies ExtensionMessage, () => {})
+}
+
+/** Persist only to the capture owned by this content script. */
+function saveCapturePatch(state: ContentScriptState, patch: Partial<ResultLocal>): void {
+    chrome.runtime.sendMessage({ type: "capture_update", captureId: state.captureId, capturePatch: patch } satisfies ExtensionMessage, () => {})
 }
 
 /** Attempts to recover last meeting to the best possible extent. */
@@ -277,7 +274,7 @@ export function startTranscriptMonitor(state: ContentScriptState, transcriptMuta
             state.transcriptTargetNode = activeNode
             // Proof that capture actually started, so a short transcript can be told
             // apart from a transcript that never began
-            chrome.storage.local.set({ captionsSeen: true })
+            saveCapturePatch(state, { captionsSeen: true })
             state.transcriptObserver = new MutationObserver((mutations) => {
                 transcriptMutationCallback(state, mutations)
             })
@@ -336,13 +333,13 @@ function persistLiveBuffer(state: ContentScriptState): void {
         timestamp: timestamp,
         transcriptText: transcriptTextBuffer
     }
-    chrome.storage.local.set({ liveTranscriptBlock: liveTranscriptBlock })
+    saveCapturePatch(state, { liveTranscriptBlock })
 }
 
 /** Drops the persisted in-flight buffer, once it is safely part of the transcript. */
-export function clearLiveBuffer(): void {
+export function clearLiveBuffer(state: ContentScriptState): void {
     lastLiveBufferPersistedAt = 0
-    chrome.storage.local.set({ liveTranscriptBlock: null, captionsSeen: false })
+    saveCapturePatch(state, { liveTranscriptBlock: null })
 }
 
 export function broadcastLiveBuffer(state: ContentScriptState): void {
@@ -350,6 +347,7 @@ export function broadcastLiveBuffer(state: ContentScriptState): void {
 
     const message: ExtensionMessage = {
         type: "broadcast_live_buffer",
+        captureId: state.captureId,
         stateTranscriptBlock: {
             mutationTargetElement: null,
             personName: state.stateTranscriptBlock.personName,
@@ -368,7 +366,7 @@ export function pushBufferToTranscript(state: ContentScriptState): void {
             "transcriptText": state.stateTranscriptBlock.transcriptTextBuffer
         })
         overWriteChromeStorage(state, ["transcript"], false)
-        clearLiveBuffer()
+        clearLiveBuffer(state)
     }
 }
 
@@ -439,12 +437,8 @@ export function renderFab(state: ContentScriptState): void {
         chrome.runtime.sendMessage(message, () => { })
     })
 
-    // Initial storage query on load
-    chrome.storage.local.get(["transcript"], (resultUntyped) => {
-        const result = resultUntyped as Partial<ResultLocal>
-        state.transcript = result.transcript ?? state.transcript
-        updateFabState(state)
-    })
+    updateFabState(state)
+
 }
 
 function makeVerticallyDraggable(fab: HTMLButtonElement): void {

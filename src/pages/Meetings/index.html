@@ -160,6 +160,7 @@
 
         .row-actions {
             display: flex;
+            flex-wrap: wrap;
             gap: 0.125rem;
             align-items: center;
             justify-content: flex-end;
@@ -196,6 +197,7 @@
         /* One small-button vocabulary for every inline row action */
         .view-summary-button,
         .download-summary-html-button,
+        .download-transcript-html-button,
         .summarize-button,
         .obsidian-button {
             background: transparent;
@@ -207,6 +209,7 @@
 
         .view-summary-button:hover:not(:disabled),
         .download-summary-html-button:hover:not(:disabled),
+        .download-transcript-html-button:hover:not(:disabled),
         .summarize-button:hover:not(:disabled),
         .obsidian-button:hover:not(:disabled) {
             background: var(--accent-wash);
@@ -502,6 +505,7 @@
             <button id="transcript-dialog-obsidian">Save to Obsidian</button>
             <select class="download-format" id="transcript-dialog-format" aria-label="Download format">
                 <option value="txt">Text (.txt)</option>
+                <option value="md">Markdown (.md)</option>
                 <option value="html">HTML (.html)</option>
             </select>
             <button id="transcript-dialog-download">Download</button>

@@ -2,6 +2,7 @@ import type { ErrorObject, Meeting, ResultLocal, ResultSync, WebhookBody } from 
 import { getTranscriptString, getChatMessagesString } from "./utils"
 import { getFolderPrefix, DEFAULT_DOWNLOAD_SUBFOLDER } from "@lib/paths"
 import { buildMeetingHtml } from "@lib/html-export"
+import { buildTranscriptMarkdown } from "@lib/markdown-export"
 import { TIMEFORMAT } from "./config"
 
 /**
@@ -53,7 +54,7 @@ export function registerDownloadFilenameGuard(): void {
  *
  * @throws error codes: 009, 010
  */
-export function downloadTranscript(index: number | Meeting, isWebhookEnabled?: boolean, format: "txt" | "html" = "txt"): Promise<string> {
+export function downloadTranscript(index: number | Meeting, isWebhookEnabled?: boolean, format: "txt" | "md" | "html" = "txt"): Promise<string> {
     return new Promise((resolve, reject) => {
         chrome.storage.local.get(["meetings"], function (resultLocalUntyped) {
             const resultLocal = resultLocalUntyped as Partial<ResultLocal>
@@ -93,7 +94,12 @@ export function downloadTranscript(index: number | Meeting, isWebhookEnabled?: b
                     content += `\n\n---------------\nCHAT MESSAGES\n---------------\n\n`
                     content += getChatMessagesString(meeting.chatMessages)
 
-                    const blob = new Blob([format === "html" ? buildMeetingHtml(meeting, "transcript", isLive) : content], { type: format === "html" ? "text/html;charset=utf-8" : "text/plain" })
+                    const blob = new Blob([
+                        format === "html" ? buildMeetingHtml(meeting, "transcript", isLive)
+                            : format === "md" ? buildTranscriptMarkdown(meeting, isLive) : content
+                    ], {
+                        type: format === "html" ? "text/html;charset=utf-8" : format === "md" ? "text/markdown;charset=utf-8" : "text/plain"
+                    })
 
                     // Read the blob as a data URL
                     const reader = new FileReader()
@@ -234,7 +240,7 @@ export function postTranscriptToWebhook(index: number): Promise<string> {
  *
  * @throws error codes: 009, 010, 022
  */
-export function downloadSummary(index: number | Meeting, format: "txt" | "html" = "txt"): Promise<string> {
+export function downloadSummary(index: number | Meeting, format: "txt" | "md" | "html" = "txt"): Promise<string> {
     return new Promise((resolve, reject) => {
         chrome.storage.local.get(["meetings"], function (resultLocalUntyped) {
             const resultLocal = resultLocalUntyped as Partial<ResultLocal>
@@ -272,13 +278,15 @@ export function downloadSummary(index: number | Meeting, format: "txt" | "html" 
                 const prefix = meeting.meetingSoftware ? `${meeting.meetingSoftware} ${kind}` : (isLive ? "Summary so far" : "Summary")
                 const fileName = `${folderPrefix}${prefix}-${sanitisedMeetingTitle} at ${formattedTimestamp}.${format}`
 
-                let content = `${meeting.meetingTitle || meeting.title || "Meeting"}\n`
+                let content = `${format === "md" ? "# " : ""}${meeting.meetingTitle || meeting.title || "Meeting"}\n`
                 content += `${new Date(meeting.meetingStartTimestamp).toLocaleString("default", TIMEFORMAT).toUpperCase()}\n\n`
                 content += `${meeting.summary.trim()}\n`
 
                 const reader = new FileReader()
                 reader.onerror = () => reject({ errorCode: "009", errorMessage: "Failed to read blob" } satisfies ErrorObject)
-                reader.readAsDataURL(new Blob([format === "html" ? buildMeetingHtml(meeting, "summary", isLive) : content], { type: format === "html" ? "text/html;charset=utf-8" : "text/plain" }))
+                reader.readAsDataURL(new Blob([format === "html" ? buildMeetingHtml(meeting, "summary", isLive) : content], {
+                    type: format === "html" ? "text/html;charset=utf-8" : format === "md" ? "text/markdown;charset=utf-8" : "text/plain"
+                }))
                 reader.onload = function (event) {
                     if (!event.target?.result) {
                         reject({ errorCode: "009", errorMessage: "Failed to read blob" } satisfies ErrorObject)

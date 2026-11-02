@@ -58,6 +58,8 @@ export interface ExtensionStatusJSON {
 }
 
 export interface Meeting {
+  /** Stable capture identity; distinguishes simultaneous sessions. */
+  captureId?: string
   meetingSoftware?: MeetingSoftware
   meetingTitle?: string | undefined
   /** Older key for meetingTitle, as written by v3.1.0. */
@@ -109,6 +111,7 @@ export interface StateTranscriptBlock {
 }
 
 export interface ContentScriptState {
+  captureId: string
   meetingSoftware: MeetingSoftware
   platform: Platform
   userName: string
@@ -137,6 +140,7 @@ export interface ContentScriptState {
 }
 
 export type ExtensionMessageType =
+  | "capture_update"
   | "new_meeting_started"
   | "meeting_ended"
   | "download_transcript_at_index"
@@ -162,10 +166,13 @@ export type ExtensionMessageType =
 /** Message sent by the calling script. */
 export interface ExtensionMessage {
   type: ExtensionMessageType
+  captureId?: string
+  captureTabId?: number
+  capturePatch?: Partial<ResultLocal>
   /** Index of the meeting to process. */
   index?: number
   /** File format for manual downloads. Defaults to plain text. */
-  format?: "txt" | "html"
+  format?: "txt" | "md" | "html"
   platform?: Platform | Platform[]
   stateTranscriptBlock?: StateTranscriptBlock
   /** Messages read from Meet's embedded Google Chat iframe, relayed to the meeting frame. */
@@ -201,6 +208,7 @@ export interface ErrorObject {
 
 /** Shape of chrome.storage.local. */
 export interface ResultLocal {
+  activeCaptureId?: string
   extensionStatusJSON: ExtensionStatusJSON
   meetingTabId: MeetingTabId
   meetingSoftware: MeetingSoftware

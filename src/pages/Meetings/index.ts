@@ -372,12 +372,13 @@ function openTranscriptDialog(meeting: Meeting, index: number, focus: "transcrip
 
     if (downloadButton) {
         const wantsSummary = (focus === "summary") && !!meeting.summary
+        const formatSelect = document.querySelector<HTMLSelectElement>("#transcript-dialog-format")
         downloadButton.textContent = wantsSummary ? "Download summary" : "Download"
         downloadButton.onclick = () => {
             const message: ExtensionMessage = {
                 type: wantsSummary ? "download_summary_at_index" : "download_transcript_at_index",
                 index: index,
-                format: document.querySelector<HTMLSelectElement>("#transcript-dialog-format")?.value === "html" ? "html" : "txt"
+                format: formatSelect?.value === "html" ? "html" : formatSelect?.value === "md" ? "md" : "txt"
             }
             chrome.runtime.sendMessage(message, (responseUntyped) => {
                 const response = responseUntyped as ExtensionResponse
@@ -1074,7 +1075,12 @@ function loadMeetings(): void {
                             }" aria-label="View this meeting summary">
                                 View${meeting.summaryStatus === "failed" ? ` <span class="status status-failed">stale</span>` : ``}
                             </button>
-                            <button class="download-summary-html-button" data-index="${i}" title="Download summary as HTML" aria-label="Download this meeting summary as HTML">Download summary HTML</button>` : ``}
+                            <select class="download-format summary-download-format" aria-label="Summary download format">
+                                <option value="txt">Text (.txt)</option>
+                                <option value="md">Markdown (.md)</option>
+                                <option value="html">HTML (.html)</option>
+                            </select>
+                            <button class="download-summary-button" data-index="${i}" aria-label="Download this meeting summary">Download summary</button>` : ``}
                             <button class="summarize-button${meeting.summary ? ` is-redo` : ``}" data-index="${i}" title="${meeting.summary ? `Summarise again with ChatGPT` : `Summarise with ChatGPT`}" aria-label="${meeting.summary ? `Summarise this meeting again with ChatGPT` : `Summarise this meeting with ChatGPT`}">
                                 ${meeting.summary ? `Redo` : `Summarise`}
                             </button>
@@ -1113,6 +1119,11 @@ function loadMeetings(): void {
                             <button class="view-button" data-index="${i}" title="View transcript" aria-label="View this meeting transcript">
                                 <span class="icon icon-view"></span>
                             </button>
+                            <select class="download-format transcript-download-format" aria-label="Transcript download format">
+                                <option value="txt">Text (.txt)</option>
+                                <option value="md">Markdown (.md)</option>
+                                <option value="html">HTML (.html)</option>
+                            </select>
                             <button class="download-button" data-index="${i}" title="Download" aria-label="Download this meeting transcript">
                                 <span class="icon icon-download"></span>
                             </button>
@@ -1158,21 +1169,24 @@ function loadMeetings(): void {
                         })
                     }
 
-                    const downloadSummaryHtmlButton = row.querySelector<HTMLButtonElement>(".download-summary-html-button")
-                    if (downloadSummaryHtmlButton) {
-                        downloadSummaryHtmlButton.addEventListener("click", function () {
-                            downloadSummaryHtmlButton.disabled = true
+                    const downloadSummaryButton = row.querySelector<HTMLButtonElement>(".download-summary-button")
+                    if (downloadSummaryButton) {
+                        downloadSummaryButton.addEventListener("click", function () {
+                            downloadSummaryButton.disabled = true
                             const message: ExtensionMessage = {
                                 type: "download_summary_at_index",
                                 index: i,
-                                format: "html"
+                                format: (() => {
+                                    const format = row.querySelector<HTMLSelectElement>(".summary-download-format")?.value
+                                    return format === "md" ? "md" : format === "html" ? "html" : "txt"
+                                })()
                             }
                             chrome.runtime.sendMessage(message, (responseUntyped) => {
-                                downloadSummaryHtmlButton.disabled = false
+                                downloadSummaryButton.disabled = false
                                 const response = responseUntyped as ExtensionResponse | undefined
                                 if (chrome.runtime.lastError || !response?.success) {
                                     const error = response?.message as ErrorObject | undefined
-                                    alert(error?.errorMessage || chrome.runtime.lastError?.message || "Could not download summary as HTML")
+                                    alert(error?.errorMessage || chrome.runtime.lastError?.message || "Could not download summary")
                                 }
                             })
                         })
@@ -1223,28 +1237,26 @@ function loadMeetings(): void {
                         })
                     }
 
-                    // Add event listener to the webhook post button
-                    const downloadButton = row.querySelector(".download-button")
-                    if (downloadButton instanceof HTMLButtonElement) {
+                    // All transcript formats are available even without a summary.
+                    row.querySelectorAll<HTMLButtonElement>(".download-button").forEach(downloadButton => {
                         downloadButton.addEventListener("click", function () {
-                            // Send message to background script to download text file
-                            const index = parseInt(downloadButton.getAttribute("data-index") ?? "-1")
+                            downloadButton.disabled = true
+                            const format = row.querySelector<HTMLSelectElement>(".transcript-download-format")?.value
                             const message: ExtensionMessage = {
                                 type: "download_transcript_at_index",
-                                index: index
+                                index: i,
+                                format: format === "md" ? "md" : format === "html" ? "html" : "txt"
                             }
                             chrome.runtime.sendMessage(message, (responseUntyped) => {
-                                const response = responseUntyped as ExtensionResponse
-                                if (!response.success) {
-                                    alert("Could not download transcript")
-                                    const parsedError = response.message as ErrorObject
-                                    if (typeof parsedError === 'object') {
-                                        console.error(parsedError.errorMessage)
-                                    }
+                                downloadButton.disabled = false
+                                const response = responseUntyped as ExtensionResponse | undefined
+                                if (chrome.runtime.lastError || !response?.success) {
+                                    const error = response?.message as ErrorObject | undefined
+                                    alert(error?.errorMessage || chrome.runtime.lastError?.message || "Could not download transcript")
                                 }
                             })
                         })
-                    }
+                    })
 
                     // Add event listener to the webhook post button
                     const webhookPostButton = row.querySelector(".post-button")

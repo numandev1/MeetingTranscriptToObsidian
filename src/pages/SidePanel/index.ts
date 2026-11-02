@@ -5,6 +5,8 @@ const meetingTitle = document.querySelector<HTMLElement>("#meeting-title")
 const container = document.querySelector<HTMLElement>("#transcript-container")
 const SCROLL_THRESHOLD = 50
 const LIVE_BLOCK_ID = 'live-transcript-placeholder'
+let activeCaptureId: string | undefined
+let captureTabId: number | undefined
 
 // Make the element editable
 if (meetingTitle) {
@@ -13,7 +15,10 @@ if (meetingTitle) {
     // Helper function to save current title
     const saveTitle = () => {
         const titleText = meetingTitle.innerText.trim()
-        chrome.storage.local.set({ meetingTitle: titleText })
+        if (activeCaptureId && captureTabId !== undefined) {
+            chrome.runtime.sendMessage({ type: "capture_update", captureId: activeCaptureId, captureTabId,
+                capturePatch: { meetingTitle: titleText } } satisfies ExtensionMessage)
+        }
     }
 
     // Save only when focus leaves the element
@@ -28,13 +33,15 @@ if (meetingTitle) {
     })
 }
 
-chrome.storage.local.get(["meetingTitle", "transcript"], (resultUntyped) => {
+chrome.storage.local.get(["meetingTitle", "transcript", "activeCaptureId", "meetingTabId"], (resultUntyped) => {
     const result = resultUntyped as Partial<ResultLocal>
+    activeCaptureId = result.activeCaptureId
+    captureTabId = typeof result.meetingTabId === "number" ? result.meetingTabId : undefined
     if (result.meetingTitle) {
         const titleText = result.meetingTitle
         if (titleText && meetingTitle) {
             console.log(result.meetingTitle)
-            meetingTitle.innerHTML = titleText
+            meetingTitle.innerText = titleText
         }
     }
 
@@ -64,10 +71,17 @@ chrome.storage.local.get(["meetingTitle", "transcript"], (resultUntyped) => {
 
 // Update on change
 chrome.storage.onChanged.addListener((changes, areaName) => {
+    if (areaName === 'local' && changes.activeCaptureId) {
+        activeCaptureId = changes.activeCaptureId.newValue
+        if (container) container.innerHTML = ''
+    }
+    if (areaName === 'local' && changes.meetingTabId) {
+        captureTabId = typeof changes.meetingTabId.newValue === "number" ? changes.meetingTabId.newValue : undefined
+    }
     if (areaName === 'local' && changes.meetingTitle) {
         const titleText = changes.meetingTitle.newValue
         if (titleText && meetingTitle) {
-            meetingTitle.innerHTML = titleText
+            meetingTitle.innerText = titleText
         }
     }
 
@@ -81,7 +95,7 @@ chrome.storage.onChanged.addListener((changes, areaName) => {
 // Live Message Listener
 chrome.runtime.onMessage.addListener((messageUnTyped) => {
     const message = messageUnTyped as ExtensionMessage
-    if (message.type === "broadcast_live_buffer") {
+    if (message.type === "broadcast_live_buffer" && message.captureId === activeCaptureId) {
         if (message.stateTranscriptBlock) {
             renderLiveBuffer(message.stateTranscriptBlock)
         }
@@ -282,9 +296,10 @@ summarizeButton?.addEventListener("click", () => {
 
 downloadButton?.addEventListener("click", () => {
     downloadButton.disabled = true
+    const format = document.querySelector<HTMLSelectElement>("#live-download-format")?.value
     const message: ExtensionMessage = {
         type: "download_live_transcript",
-        format: document.querySelector<HTMLSelectElement>("#live-download-format")?.value === "html" ? "html" : "txt"
+        format: format === "md" ? "md" : format === "html" ? "html" : "txt"
     }
     chrome.runtime.sendMessage(message, (responseUntyped) => {
         const response = responseUntyped as ExtensionResponse | undefined
@@ -297,7 +312,10 @@ downloadSummaryButton?.addEventListener("click", () => {
     downloadSummaryButton.disabled = true
     const message: ExtensionMessage = {
         type: "download_live_summary",
-        format: document.querySelector<HTMLSelectElement>("#live-summary-download-format")?.value === "html" ? "html" : "txt"
+        format: (() => {
+            const format = document.querySelector<HTMLSelectElement>("#live-summary-download-format")?.value
+            return format === "md" ? "md" : format === "html" ? "html" : "txt"
+        })()
     }
     chrome.runtime.sendMessage(message, (responseUntyped) => {
         const response = responseUntyped as ExtensionResponse | undefined

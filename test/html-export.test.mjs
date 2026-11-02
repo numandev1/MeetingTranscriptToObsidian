@@ -100,3 +100,50 @@ test("a failed fallback download is reported as a failure", async () => {
   const harness = exporterHarness(2)
   await assert.rejects(harness.downloadSummary(0, "html"), /Download rejected/)
 })
+
+test("summary Markdown download preserves headings, tasks and the selected folder", async () => {
+  const harness = exporterHarness()
+  await harness.downloadSummary(0, "md")
+  const [download] = harness.downloads
+  assert.match(download.filename, /^Work\/Calls\/.*\.md$/)
+  assert.match(download.url, /^data:text\/markdown;charset=utf-8;base64,/)
+  const text = Buffer.from(download.url.split(",")[1], "base64").toString()
+  assert.ok(text.startsWith(`# ${meeting.meetingTitle}\n`))
+  assert.ok(text.includes(meeting.summary))
+  assert.doesNotMatch(text, /<!doctype html>/i)
+})
+
+test("live summary and fallback downloads retain Markdown format", async () => {
+  const harness = exporterHarness(1)
+  await harness.downloadSummary(meeting, "md")
+  assert.match(harness.downloads[0].filename, /summary so far.*\.md$/)
+  assert.equal(harness.downloads[1].filename, "Work/Calls/Summary.md")
+  assert.match(harness.downloads[1].url, /^data:text\/markdown;charset=utf-8;base64,/)
+})
+
+test("full transcript Markdown includes every speaker block and chat message", async () => {
+  const harness = exporterHarness()
+  await harness.downloadTranscript(0, false, "md")
+  const [download] = harness.downloads
+  assert.match(download.filename, /^Work\/Calls\/.*\.md$/)
+  assert.match(download.url, /^data:text\/markdown;charset=utf-8;base64,/)
+  const text = Buffer.from(download.url.split(",")[1], "base64").toString()
+  assert.match(text, /^# Planning/)
+  assert.match(text, /## Transcript/)
+  assert.match(text, /Alice &amp; Bob/)
+  assert.match(text, /&lt;img src=x onerror=alert\(1\)&gt;/)
+  assert.match(text, /Next line/)
+  assert.match(text, /## Chat messages/)
+  assert.match(text, /Charlie/)
+  assert.match(text, /Chat only text/)
+  assert.doesNotMatch(text, /<img|<!doctype|Ship/)
+})
+
+test("live transcript Markdown keeps its format and folder on fallback", async () => {
+  const harness = exporterHarness(1)
+  await harness.downloadTranscript(meeting, false, "md")
+  assert.match(harness.downloads[0].filename, /transcript so far.*\.md$/)
+  assert.equal(harness.downloads[1].filename, "Work/Calls/Transcript.md")
+  assert.match(harness.downloads[1].url, /^data:text\/markdown;charset=utf-8;base64,/)
+  assert.match(Buffer.from(harness.downloads[1].url.split(",")[1], "base64").toString(), /Transcript so far/)
+})

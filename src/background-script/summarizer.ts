@@ -461,14 +461,14 @@ export function summarizeMeeting(index: number): Promise<string> {
                 // Re-read: the run takes minutes, and the list may have changed meanwhile
                 // (a meeting ended and was filed). Write back to the same meeting by its
                 // start time rather than trusting a stale array and index.
-                await updateStoredMeeting(meetings[index].meetingStartTimestamp, meeting => {
+                await updateStoredMeeting(meetings[index], meeting => {
                     meeting.summary = summary
                     meeting.summaryStatus = "successful"
                 })
                 resolve(summary)
             }
             catch (error) {
-                await updateStoredMeeting(meetings[index].meetingStartTimestamp, meeting => {
+                await updateStoredMeeting(meetings[index], meeting => {
                     meeting.summaryStatus = "failed"
                 })
                 reject(error)
@@ -478,11 +478,11 @@ export function summarizeMeeting(index: number): Promise<string> {
 }
 
 /** Applies a change to the stored meeting with this start time, if it is still there. */
-function updateStoredMeeting(meetingStartTimestamp: string, change: (meeting: Meeting) => void): Promise<void> {
+function updateStoredMeeting(identity: Pick<Meeting, "captureId" | "meetingStartTimestamp">, change: (meeting: Meeting) => void): Promise<void> {
     return new Promise(resolve => {
         chrome.storage.local.get(["meetings"], (resultUntyped) => {
             const meetings = (resultUntyped as Partial<ResultLocal>).meetings ?? []
-            const meeting = meetings.find(m => m.meetingStartTimestamp === meetingStartTimestamp)
+            const meeting = meetings.find(m => identity.captureId ? m.captureId === identity.captureId : m.meetingStartTimestamp === identity.meetingStartTimestamp)
             if (!meeting) {
                 resolve()
                 return
