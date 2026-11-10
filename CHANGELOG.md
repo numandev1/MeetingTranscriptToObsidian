@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.0.6
+
+- fix: keep Google Meet captions on in meetings with translated speech
+
 ## 0.0.5
 
 - fix: isolate concurrent meetings and add Markdown downloads
