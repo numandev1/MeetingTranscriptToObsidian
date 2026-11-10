@@ -37,6 +37,125 @@ export function selectControlButton(selector: string, text: string): HTMLElement
         ?? matches[0]
 }
 
+/** How long after joining the extension keeps trying to get captions on */
+const CAPTIONS_ENFORCE_WINDOW_MS = 2 * 60 * 1000
+const CAPTIONS_CHECK_INTERVAL_MS = 1500
+/** Attempts of a stuck button click before also trying Meet's "c" shortcut */
+const CAPTIONS_CLICKS_BEFORE_SHORTCUT = 2
+
+/** The visible toolbar button whose icon currently shows `ligature`, if any */
+function visibleButtonWithIcon(ligature: string): HTMLElement | undefined {
+    return selectElements(SELECTORS_GOOGLE_MEET.GOOGLE_SYMBOLS, ligature)
+        .map(element => element.closest("button") as HTMLElement | null)
+        .filter((button): button is HTMLElement => button !== null)
+        .find(button => button.getBoundingClientRect().width > 0)
+}
+
+const CAPTIONS_ICONS = [
+    SELECTORS_GOOGLE_MEET.TEXT_CAPTIONS_OFF,
+    SELECTORS_GOOGLE_MEET.TEXT_CAPTIONS_ON,
+    SELECTORS_GOOGLE_MEET.TEXT_CAPTIONS_TRANSLATE
+]
+
+/**
+ * Current captions state, and the button that toggles them.
+ *
+ * Meet has two toolbars. The classic one swaps the CC icon between
+ * "closed_caption_off" and "closed_caption". In meetings with translated speech the
+ * control is a "Captions and translation" button whose icon is always "translate_cc",
+ * so its state can only be read from aria-pressed.
+ */
+export function getCaptionsState(): { on: boolean, button: HTMLElement } | undefined {
+    const translateButton = visibleButtonWithIcon(SELECTORS_GOOGLE_MEET.TEXT_CAPTIONS_TRANSLATE)
+    if (translateButton) {
+        return { on: translateButton.getAttribute("aria-pressed") === "true", button: translateButton }
+    }
+    const onButton = visibleButtonWithIcon(SELECTORS_GOOGLE_MEET.TEXT_CAPTIONS_ON)
+    if (onButton) return { on: true, button: onButton }
+    const offButton = visibleButtonWithIcon(SELECTORS_GOOGLE_MEET.TEXT_CAPTIONS_OFF)
+    if (offButton) return { on: false, button: offButton }
+    return undefined
+}
+
+/**
+ * Turns captions on and keeps checking until Meet actually shows them on.
+ *
+ * Meetings with translated speech use the "translate_cc" toggle (see getCaptionsState);
+ * before it was recognised, the extension never found a captions button in those
+ * meetings and captions stayed off. A single click is also not verified by Meet in any
+ * way — the button can be disabled or re-rendered at the moment it lands — so this
+ * re-checks the state on an interval and clicks again whenever captions are off,
+ * until they have stayed on through two consecutive checks or the window ends. It
+ * stops for good as soon as the user clicks the captions button themselves
+ * (a trusted click), so turning captions off by hand is respected.
+ */
+export function ensureCaptionsOn(state: ContentScriptState): void {
+    const startedAt = Date.now()
+    let userTookOver = false
+    let attempts = 0
+    let confirmedChecks = 0
+
+    // A real user click on the CC control means they are managing captions themselves
+    function onUserClick(event: MouseEvent) {
+        if (!event.isTrusted) return
+        const target = event.target as Element | null
+        const button = target?.closest("button")
+        if (!button) return
+        const icon = (button.querySelector(SELECTORS_GOOGLE_MEET.GOOGLE_SYMBOLS)?.textContent ?? "").trim()
+        if (CAPTIONS_ICONS.includes(icon)) {
+            userTookOver = true
+        }
+    }
+    document.addEventListener("click", onUserClick, true)
+
+    function stop(reason: string) {
+        clearInterval(interval)
+        document.removeEventListener("click", onUserClick, true)
+        console.log(`Captions enforcer stopped: ${reason}`)
+    }
+
+    function check() {
+        if (state.hasMeetingEnded) return stop("meeting ended")
+        if (userTookOver) return stop("user toggled captions")
+        if (Date.now() - startedAt > CAPTIONS_ENFORCE_WINDOW_MS) {
+            return stop(confirmedChecks > 0 ? "captions on" : "gave up, captions still off")
+        }
+
+        const captions = getCaptionsState()
+        if (!captions) return  // control is being re-rendered; look again next tick
+
+        if (captions.on) {
+            // Require captions to survive two consecutive checks: translated speech
+            // setup can switch them off again right after they first come on
+            confirmedChecks++
+            if (confirmedChecks >= 2) stop("captions on")
+            return
+        }
+        confirmedChecks = 0
+
+        const offButton = captions.button
+        if ((offButton as HTMLButtonElement).disabled || offButton.getAttribute("aria-disabled") === "true") {
+            return  // not ready yet, a click now would be swallowed
+        }
+
+        attempts++
+        console.log(`Turning captions on (attempt ${attempts})`)
+        offButton.click()
+
+        // If clicks keep failing to stick, also try Meet's own keyboard shortcut
+        if (attempts > CAPTIONS_CLICKS_BEFORE_SHORTCUT) {
+            for (const type of ["keydown", "keyup"]) {
+                document.body.dispatchEvent(new KeyboardEvent(type, {
+                    key: "c", code: "KeyC", keyCode: 67, which: 67, bubbles: true, cancelable: true
+                }))
+            }
+        }
+    }
+
+    const interval = setInterval(check, CAPTIONS_CHECK_INTERVAL_MS)
+    check()
+}
+
 /** Shows a responsive notification of specified type and message */
 export function showNotificationGoogleMeet(extensionStatusJSON: ExtensionStatusJSON): void {
     // Banner CSS

@@ -18,7 +18,7 @@ import {
     waitForElement,
 } from "../common-utils"
 import { SELECTORS_GOOGLE_MEET } from "./config"
-import { captureUserName, pushChatBlock, selectControlButton, selectElements, showNotificationGoogleMeet } from "./utils"
+import { captureUserName, ensureCaptionsOn, getCaptionsState, pushChatBlock, selectControlButton, selectElements, showNotificationGoogleMeet } from "./utils"
 
 export function initGoogleMeet(): void {
     // Attempt to recover last meeting, if any. Abort if it takes more than 15 seconds to prevent current meeting getting messed up.
@@ -85,12 +85,10 @@ function googleMeetRoutines(state: ContentScriptState): void {
         // REGISTER TRANSCRIPT LISTENER
         // Wait for captions icon to be visible. When user is waiting in meeting lobbing for someone to let them in, the call end icon is visible, but the captions icon is still not visible.
         waitForElement(SELECTORS_GOOGLE_MEET.GOOGLE_SYMBOLS,
-            [SELECTORS_GOOGLE_MEET.TEXT_CAPTIONS_OFF, SELECTORS_GOOGLE_MEET.TEXT_CAPTIONS_ON])
-            .then((captionsIcon) => {
-                // Which ligature matched tells us the current state. Clicking when
-                // captions are already on would switch them off, losing the transcript.
-                const captionsAlreadyOn =
-                    (captionsIcon.textContent ?? "").trim() === SELECTORS_GOOGLE_MEET.TEXT_CAPTIONS_ON
+            [SELECTORS_GOOGLE_MEET.TEXT_CAPTIONS_OFF, SELECTORS_GOOGLE_MEET.TEXT_CAPTIONS_ON, SELECTORS_GOOGLE_MEET.TEXT_CAPTIONS_TRANSLATE])
+            .then(() => {
+                // Clicking when captions are already on would switch them off, losing the transcript.
+                const captionsAlreadyOn = getCaptionsState()?.on === true
 
                 chrome.storage.sync.get(["operationMode"], function (resultSyncUntyped) {
                     const resultSync = resultSyncUntyped as Partial<ResultSync>
@@ -101,9 +99,9 @@ function googleMeetRoutines(state: ContentScriptState): void {
                         console.log("Captions already on, nothing to switch")
                     }
                     else {
-                        // CRITICAL DOM DEPENDENCY
-                        selectControlButton(SELECTORS_GOOGLE_MEET.GOOGLE_SYMBOLS,
-                            SELECTORS_GOOGLE_MEET.TEXT_CAPTIONS_OFF)?.click()
+                        // CRITICAL DOM DEPENDENCY. Clicks and then verifies, retrying while
+                        // Meet (e.g. translated speech setup) resets or swallows the toggle.
+                        ensureCaptionsOn(state)
                     }
                 })
 

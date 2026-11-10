@@ -7,6 +7,9 @@ export const SELECTORS_GOOGLE_MEET = {
     // off (clicking turns them on), the bare name means they are already on.
     TEXT_CAPTIONS_OFF: "closed_caption_off",
     TEXT_CAPTIONS_ON: "closed_caption",
+    // Meetings with translated speech replace the CC toggle with a "Captions and
+    // translation" button whose icon never changes; its state is in aria-pressed.
+    TEXT_CAPTIONS_TRANSLATE: "translate_cc",
     TEXT_CHAT: "chat",
     TRANSCRIPT_REGION: 'div[role="region"][tabindex="0"]',
     CHAT_LIVE_REGION: 'div[aria-live="polite"].Ge9Kpc',
